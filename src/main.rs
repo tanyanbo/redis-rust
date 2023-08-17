@@ -21,7 +21,7 @@ fn main() {
                     std::str::from_utf8(&received_data[..read_bytes_len]).unwrap()
                 );
 
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n+PONG\r\n");
+                let _ = stream.write_all(b"+PONG\r\n");
                 println!("accepted new connection");
             }
             Err(e) => {
