@@ -1,32 +1,49 @@
-// Uncomment this block to pass the first stage
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
+mod proto;
+
+use std::io::ErrorKind;
+
+use proto::Parser;
+use tokio::{
+    self,
+    io::{self, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    spawn,
 };
 
-fn main() {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    loop {
+        if let Ok((stream, _)) = listener.accept().await {
+            let fut = handle_connection(stream);
+            spawn(fut);
+        }
+    }
+}
 
-    // Uncomment this block to pass the first stage
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+async fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
+    loop {
+        stream.readable().await?;
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let mut received_data = [0u8; 256];
-                let read_bytes_len = stream.read(&mut received_data).unwrap();
-                println!(
-                    "{}",
-                    std::str::from_utf8(&received_data[..read_bytes_len]).unwrap()
-                );
-
-                let _ = stream.write_all(b"+PONG\r\n");
-                println!("accepted new connection");
+        let mut buf = [0; 256];
+        let result = stream.try_read(&mut buf);
+        match result {
+            Ok(0) => return Ok(()),
+            Ok(bytes) => {
+                let command = Parser::parse(&buf[..bytes]);
+                // match commands.get(0) {
+                //     Some(&"ping") => {
+                //         stream.write(b"+pong\r\n").await?;
+                //         stream.flush().await?;
+                //     }
+                //     Some(&"echo") => {}
+                //     Some(_) | None => {
+                //         stream.write(b"+\r\n").await?;
+                //     }
+                // };
             }
-            Err(e) => {
-                println!("error: {}", e);
-            }
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e),
         }
     }
 }
