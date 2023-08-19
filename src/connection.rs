@@ -6,14 +6,14 @@ use std::{
 
 use crate::proto::{parse, Command, ParserError};
 use anyhow::{Error, Result};
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, Utc};
 use tokio::{
     self,
     io::{self, AsyncWriteExt},
     net::TcpStream,
 };
 
-pub type Db = Arc<RwLock<HashMap<String, (String, DateTime<Utc>)>>>;
+pub type Db = Arc<RwLock<HashMap<String, (String, Option<DateTime<Utc>>)>>>;
 
 pub async fn handle_connection(mut stream: TcpStream, db: Db) -> io::Result<()> {
     loop {
@@ -103,7 +103,7 @@ fn exectute_set(
     db: Db,
     key: &String,
     value: &String,
-    options: (DateTime<Utc>, bool, bool, bool),
+    options: (Option<DateTime<Utc>>, bool, bool, bool),
 ) -> String {
     let key = key.to_string();
     let value = value.to_string();
@@ -127,8 +127,8 @@ fn exectute_set(
     }
 }
 
-fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool, bool)> {
-    let mut expiry = Utc.with_ymd_and_hms(9999, 1, 1, 0, 0, 0).unwrap();
+fn parse_set_options(values: &Vec<Command>) -> Result<(Option<DateTime<Utc>>, bool, bool, bool)> {
+    let mut expiry = None;
     let mut nx = false;
     let mut xx = false;
     let mut get = false;
@@ -144,9 +144,9 @@ fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool
                 if let Command::BulkString { value } = time_arg {
                     let time = value.parse::<usize>()?;
                     if *arg.to_lowercase() == String::from("px") {
-                        expiry = Utc::now() + Duration::milliseconds(time as i64);
+                        expiry = Some(Utc::now() + Duration::milliseconds(time as i64));
                     } else {
-                        expiry = Utc::now() + Duration::seconds(time as i64);
+                        expiry = Some(Utc::now() + Duration::seconds(time as i64));
                     }
                 }
                 i += 1;
@@ -176,7 +176,7 @@ fn handle_get(db: Db, values: Vec<Command>) -> String {
             let read_db = db.read().unwrap();
             let value = read_db.get(key);
             return if let Some((value, expiry)) = value {
-                if Utc::now() < *expiry {
+                if expiry.is_none() || Utc::now() < (*expiry).unwrap() {
                     get_bulk_string(value)
                 } else {
                     drop(read_db);
