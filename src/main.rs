@@ -31,6 +31,8 @@ async fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
             Ok(0) => return Ok(()),
             Ok(bytes) => {
                 let command = parse(&buf[..bytes]);
+                println!("{:?}", String::from_utf8_lossy(&buf[..bytes]));
+                println!("{:?}", command);
                 // match commands.get(0) {
                 //     Some(&"ping") => {
                 //         stream.write(b"+pong\r\n").await?;

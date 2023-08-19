@@ -1,21 +1,21 @@
+#[derive(Debug)]
 pub enum ParserError {
     InvalidLength(String),
     InvalidCommand,
     EmptyFirstByte,
 }
 
+#[derive(Debug)]
 pub enum Command {
     SimpleString { value: String },
     BulkString { value: String },
-    Array { values: Vec<String> },
+    Array { values: Vec<Command> },
 }
 
-pub fn parse<'a>(command: &'a [u8]) -> Result<Command, ParserError> {
+pub fn parse(command: &[u8]) -> Result<Command, ParserError> {
     let mut iter = command.iter();
 
-    loop {
-        let command = parse_command(&mut iter);
-    }
+    parse_command(&mut iter)
 }
 
 fn parse_command<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Command, ParserError> {
@@ -30,30 +30,14 @@ fn parse_command<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Comm
 
 fn parse_array<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Command, ParserError> {
     let mut values = vec![];
-    let mut elements_len = String::default();
-    while let Some(len) = commands.next() {
-        elements_len.push(*len as char);
-    }
+    let elements_len = get_value(commands)?;
     let mut elements_len = elements_len
         .parse::<usize>()
         .map_err(|_| ParserError::InvalidLength(elements_len))?;
 
     while elements_len > 0 {
+        values.push(parse_command(commands)?);
         elements_len -= 1;
-
-        loop {
-            let mut value = String::default();
-            match commands.next() {
-                Some(command) if *command != b'\r' => {
-                    value.push(*command as char);
-                }
-                Some(_) => {
-                    commands.next();
-                    break;
-                }
-                None => return Err(ParserError::InvalidCommand),
-            }
-        }
     }
     Ok(Command::Array { values })
 }
@@ -99,15 +83,15 @@ fn get_value_with_len<'a>(
 }
 
 fn get_value<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<String, ParserError> {
+    let mut value = String::default();
     loop {
-        let mut value = String::default();
         match commands.next() {
-            Some(command) if *command != b'\r' => {
-                value.push(*command as char);
-            }
-            Some(_) => {
+            Some(b'\r') => {
                 commands.next();
-                break Ok(value);
+                return Ok(value);
+            }
+            Some(command) => {
+                value.push(*command as char);
             }
             None => return Err(ParserError::InvalidCommand),
         }
