@@ -2,6 +2,7 @@ pub enum ParserError {
     InvalidLength(String),
     EmptyCommand,
     OnlyOneByte,
+    WrongLength(usize),
 }
 
 pub enum Command {
@@ -23,7 +24,8 @@ impl Parser {
         let commands = message.split("\r\n");
 
         match first_byte {
-            b'*' => Ok(Self::parse_array(commands)?),
+            b'*' => Self::parse_array(commands),
+            b'+' => Self::parse_simple_string(commands),
             _ => unimplemented!("error"),
         }
     }
@@ -31,13 +33,31 @@ impl Parser {
     fn parse_array<'a>(
         mut commands: impl Iterator<Item = &'a str>,
     ) -> Result<Command, ParserError> {
-        let elements_len: usize = match commands.next() {
+        let mut elements_len: usize = match commands.next() {
             Some(x) => x
                 .parse()
                 .map_err(|_| ParserError::InvalidLength(x.to_string()))?,
-            _ => 0,
+            _ => return Err(ParserError::OnlyOneByte),
         };
 
-        Ok(Command::Array { values: vec![] })
+        let mut values = vec![];
+        while let Some(command) = commands.next() {
+            elements_len -= 1;
+            values.push(command.to_string());
+        }
+
+        if elements_len != 0 {
+            return Err(ParserError::WrongLength(elements_len));
+        }
+
+        Ok(Command::Array { values })
+    }
+
+    fn parse_simple_string<'a>(
+        mut commands: impl Iterator<Item = &'a str>,
+    ) -> Result<Command, ParserError> {
+        Ok(Command::SimpleString {
+            value: commands.next().ok_or(ParserError::OnlyOneByte)?.to_string(),
+        })
     }
 }
