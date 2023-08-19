@@ -12,6 +12,7 @@ pub enum Command {
     BulkString { value: String },
     Array { values: Vec<Command> },
     Integer { value: i32 },
+    Null,
 }
 
 pub fn parse(command: &[u8]) -> Result<Command, ParserError> {
@@ -27,8 +28,18 @@ fn parse_command<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Comm
         b':' => parse_integer(commands),
         b'*' => parse_array(commands),
         b'$' => parse_bulk_string(commands),
+        b'_' => parse_null(commands),
         _ => Err(ParserError::EmptyFirstByte),
     }
+}
+
+fn parse_null<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Command, ParserError> {
+    let first = commands.next().ok_or(ParserError::InvalidCommand)?;
+    let second = commands.next().ok_or(ParserError::InvalidCommand)?;
+    if *first != b'\r' || *second != b'\n' {
+        return Err(ParserError::InvalidCommand);
+    }
+    Ok(Command::Null)
 }
 
 fn parse_array<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Command, ParserError> {
