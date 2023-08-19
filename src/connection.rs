@@ -161,15 +161,18 @@ fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool
 
 fn handle_get(db: Db, values: Vec<Command>) -> String {
     // TODO handle db read write failure
-    let db = db.read().unwrap();
+    let read_db = db.read().unwrap();
     let key = values.get(1);
     if let Some(key) = key {
         if let Command::BulkString { value: key } = key {
-            let value = db.get(key);
+            let value = read_db.get(key);
             return if let Some((value, expiry)) = value {
                 if Utc::now() < *expiry {
                     get_bulk_string(value)
                 } else {
+                    drop(read_db);
+                    let mut write_db = db.write().unwrap();
+                    write_db.remove(key);
                     get_null_string()
                 }
             } else {
