@@ -17,7 +17,6 @@ pub async fn handle_connection(
     db: Arc<RwLock<HashMap<String, String>>>,
 ) -> io::Result<()> {
     loop {
-        // TODO handle all commands in a seperate task
         stream.readable().await?;
         let mut buf = [0; 256];
         let result = stream.try_read(&mut buf);
@@ -57,13 +56,13 @@ fn handle_command(
                         //
                         handle_get(Arc::clone(&db), values)
                     }
-                    _ => "+Unsupported\r\n".into(),
+                    _ => "-ERR unsupported command\r\n".into(),
                 }
             } else {
-                "Empty command".into()
+                "-ERR empty command".into()
             }
         }
-        Ok(_) => "+Unsupported\r\n".into(),
+        Ok(_) => "-ERR unsupported command\r\n".into(),
         Err(e) => {
             let err_string = format!("{:?}", e);
             err_string.into()
@@ -81,8 +80,7 @@ fn handle_set(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) ->
             return "+OK\r\n".into();
         }
     }
-    // TODO return error type
-    "+Invalid command\r\n".to_string()
+    wrong_number_args("set")
 }
 
 fn handle_get(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) -> String {
@@ -98,11 +96,10 @@ fn handle_get(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) ->
                 "_\r\n".into()
             };
         } else {
-            // TODO return error type
-            return "+Invalid command\r\n".to_string();
+            return invalid_arg("get");
         }
     }
-    "".into()
+    wrong_number_args("get")
 }
 
 fn handle_echo(values: Vec<Command>) -> String {
@@ -111,14 +108,23 @@ fn handle_echo(values: Vec<Command>) -> String {
         if let Command::BulkString { value } = command {
             return get_bulk_string(value);
         } else {
-            // TODO return error type
-            return "+Invalid command\r\n".to_string();
+            return invalid_arg("echo");
         }
     }
-    // TODO return error type
-    return "+Invalid command\r\n".to_string();
+    wrong_number_args("echo")
 }
 
 fn get_bulk_string(value: &String) -> String {
     format!("${}\r\n{}\r\n", value.len(), value)
+}
+
+fn invalid_arg(command: &str) -> String {
+    format!("-ERR invalid argument for '{}' command\r\n", command)
+}
+
+fn wrong_number_args(command: &str) -> String {
+    format!(
+        "-ERR wrong number of arguments for '{}' command\r\n",
+        command
+    )
 }
