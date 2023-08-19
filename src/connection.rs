@@ -13,10 +13,9 @@ use tokio::{
     net::TcpStream,
 };
 
-pub async fn handle_connection(
-    mut stream: TcpStream,
-    db: Arc<RwLock<HashMap<String, String>>>,
-) -> io::Result<()> {
+pub type Db = Arc<RwLock<HashMap<String, (String, DateTime<Utc>)>>>;
+
+pub async fn handle_connection(mut stream: TcpStream, db: Db) -> io::Result<()> {
     loop {
         stream.readable().await?;
         let mut buf = [0; 256];
@@ -36,10 +35,7 @@ pub async fn handle_connection(
     }
 }
 
-fn handle_command(
-    command: Result<Command, ParserError>,
-    db: Arc<RwLock<HashMap<String, String>>>,
-) -> String {
+fn handle_command(command: Result<Command, ParserError>, db: Db) -> String {
     match command {
         Ok(Command::Array { values }) => {
             if let Some(command) = values.get(0) {
@@ -71,7 +67,7 @@ fn handle_command(
     }
 }
 
-fn handle_set(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) -> String {
+fn handle_set(db: Db, values: Vec<Command>) -> String {
     if values.len() < 3 {
         return wrong_number_args("set");
     }
@@ -96,7 +92,7 @@ fn handle_set(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) ->
 }
 
 fn exectute_set(
-    db: Arc<RwLock<HashMap<String, String>>>,
+    db: Db,
     key: &String,
     value: &String,
     options: (DateTime<Utc>, bool, bool, bool),
@@ -108,9 +104,9 @@ fn exectute_set(
 
     let entry = db.get(&key);
     if (entry.is_some() && nx) || (entry.is_none() && xx) || (!nx && !xx) {
-        let result = db.insert(key, value);
+        let result = db.insert(key, (value, expiry));
         if get {
-            if let Some(prev) = result {
+            if let Some((prev, _)) = result {
                 get_bulk_string(&prev)
             } else {
                 get_null_string()
@@ -163,15 +159,19 @@ fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool
     Ok((expiry, nx, xx, get))
 }
 
-fn handle_get(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) -> String {
+fn handle_get(db: Db, values: Vec<Command>) -> String {
     // TODO handle db read write failure
     let db = db.read().unwrap();
     let key = values.get(1);
     if let Some(key) = key {
         if let Command::BulkString { value: key } = key {
             let value = db.get(key);
-            return if let Some(value) = value {
-                get_bulk_string(value)
+            return if let Some((value, expiry)) = value {
+                if Utc::now() < *expiry {
+                    get_bulk_string(value)
+                } else {
+                    get_null_string()
+                }
             } else {
                 get_null_string()
             };
