@@ -6,7 +6,7 @@ pub enum ParserError {
     InvalidInteger(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     SimpleString { value: String },
     BulkString { value: String },

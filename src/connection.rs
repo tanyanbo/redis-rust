@@ -5,11 +5,12 @@ use std::{
 };
 
 use crate::proto::{parse, Command, ParserError};
+use anyhow::{Error, Result};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use tokio::{
     self,
     io::{self, AsyncWriteExt},
     net::TcpStream,
-    spawn,
 };
 
 pub async fn handle_connection(
@@ -71,16 +72,86 @@ fn handle_command(
 }
 
 fn handle_set(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) -> String {
+    if values.len() < 3 {
+        return wrong_number_args("set");
+    }
+
+    let key = values
+        .get(1)
+        .expect("already checked for number of arguments");
+    let value = values
+        .get(2)
+        .expect("already checked for number of arguments");
+
+    let options = parse_set_options(&values);
+    if options.is_err() {
+        return invalid_arg("set");
+    }
+
+    if let (Command::BulkString { value: key }, Command::BulkString { value }) = (key, value) {
+        exectute_set(db, key, value, options.unwrap())
+    } else {
+        invalid_arg("set")
+    }
+}
+
+fn exectute_set(
+    db: Arc<RwLock<HashMap<String, String>>>,
+    key: &String,
+    value: &String,
+    options: (DateTime<Utc>, bool, bool, bool),
+) -> String {
     let mut db = db.write().unwrap();
-    let key = values.get(1);
-    let value = values.get(2);
-    if let (Some(key), Some(value)) = (key, value) {
-        if let (Command::BulkString { value: key }, Command::BulkString { value }) = (key, value) {
-            db.insert(key.to_string(), value.to_string());
-            return "+OK\r\n".into();
+    let (expiry, nx, xx, get) = options;
+    let result = db.insert(key.to_string(), value.to_string());
+    if get {
+        if let Some(prev) = result {
+            return get_bulk_string(&prev);
+        } else {
+            return get_null_string();
         }
     }
-    wrong_number_args("set")
+    return "+OK\r\n".into();
+}
+
+fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool, bool)> {
+    let mut expiry = Utc.with_ymd_and_hms(9999, 1, 1, 0, 0, 0).unwrap();
+    let mut nx = false;
+    let mut xx = false;
+    let mut get = false;
+
+    let mut i = 3;
+    while i < values.len() {
+        match &values[i] {
+            Command::BulkString { value: arg }
+                if *arg == String::from("px") || *arg == String::from("ex") =>
+            {
+                let time_arg = values.get(i + 1).ok_or(Error::msg("Invalid arguments"))?;
+                if let Command::BulkString { value } = time_arg {
+                    let time = value.parse::<usize>()?;
+                    if *arg == String::from("px") {
+                        expiry = Utc::now() + Duration::milliseconds(time as i64);
+                    } else {
+                        expiry = Utc::now() + Duration::seconds(time as i64);
+                    }
+                }
+                i += 1;
+            }
+            Command::BulkString { value: arg } if *arg == String::from("xx") => {
+                xx = true;
+            }
+            Command::BulkString { value: arg } if *arg == String::from("nx") => {
+                nx = true;
+            }
+            Command::BulkString { value: arg } if *arg == String::from("get") => {
+                get = true;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    Ok((expiry, nx, xx, get))
 }
 
 fn handle_get(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) -> String {
@@ -93,7 +164,7 @@ fn handle_get(db: Arc<RwLock<HashMap<String, String>>>, values: Vec<Command>) ->
             return if let Some(value) = value {
                 get_bulk_string(value)
             } else {
-                "_\r\n".into()
+                get_null_string()
             };
         } else {
             return invalid_arg("get");
@@ -116,6 +187,10 @@ fn handle_echo(values: Vec<Command>) -> String {
 
 fn get_bulk_string(value: &String) -> String {
     format!("${}\r\n{}\r\n", value.len(), value)
+}
+
+fn get_null_string() -> String {
+    "_\r\n".into()
 }
 
 fn invalid_arg(command: &str) -> String {
