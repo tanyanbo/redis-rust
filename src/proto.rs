@@ -102,7 +102,7 @@ fn get_value_with_len<'a>(
     if *first != b'\r' || *second != b'\n' {
         return Err(ParserError::InvalidCommand);
     }
-    Ok(value)
+    Ok(value.to_lowercase())
 }
 
 fn get_value<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<String, ParserError> {
@@ -111,7 +111,7 @@ fn get_value<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<String, 
         match commands.next() {
             Some(b'\r') => {
                 commands.next();
-                return Ok(value);
+                return Ok(value.to_lowercase());
             }
             Some(command) => {
                 value.push(*command as char);
