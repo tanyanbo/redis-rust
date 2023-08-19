@@ -40,16 +40,24 @@ fn handle_command(command: Result<Command, ParserError>, db: Db) -> String {
         Ok(Command::Array { values }) => {
             if let Some(command) = values.get(0) {
                 match command {
-                    Command::BulkString { value } if *value == String::from("ping") => {
+                    Command::BulkString { value }
+                        if *value.to_lowercase() == String::from("ping") =>
+                    {
                         "+PONG\r\n".into()
                     }
-                    Command::BulkString { value } if *value == String::from("echo") => {
+                    Command::BulkString { value }
+                        if *value.to_lowercase() == String::from("echo") =>
+                    {
                         handle_echo(values)
                     }
-                    Command::BulkString { value } if *value == String::from("set") => {
+                    Command::BulkString { value }
+                        if *value.to_lowercase() == String::from("set") =>
+                    {
                         handle_set(Arc::clone(&db), values)
                     }
-                    Command::BulkString { value } if *value == String::from("get") => {
+                    Command::BulkString { value }
+                        if *value.to_lowercase() == String::from("get") =>
+                    {
                         //
                         handle_get(Arc::clone(&db), values)
                     }
@@ -97,10 +105,10 @@ fn exectute_set(
     value: &String,
     options: (DateTime<Utc>, bool, bool, bool),
 ) -> String {
-    let mut db = db.write().unwrap();
     let key = key.to_string();
     let value = value.to_string();
     let (expiry, nx, xx, get) = options;
+    let mut db = db.write().unwrap();
 
     let entry = db.get(&key);
     if (entry.is_some() && nx) || (entry.is_none() && xx) || (!nx && !xx) {
@@ -129,12 +137,13 @@ fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool
     while i < values.len() {
         match &values[i] {
             Command::BulkString { value: arg }
-                if *arg == String::from("px") || *arg == String::from("ex") =>
+                if *arg.to_lowercase() == String::from("px")
+                    || *arg.to_lowercase() == String::from("ex") =>
             {
                 let time_arg = values.get(i + 1).ok_or(Error::msg("Invalid arguments"))?;
                 if let Command::BulkString { value } = time_arg {
                     let time = value.parse::<usize>()?;
-                    if *arg == String::from("px") {
+                    if *arg.to_lowercase() == String::from("px") {
                         expiry = Utc::now() + Duration::milliseconds(time as i64);
                     } else {
                         expiry = Utc::now() + Duration::seconds(time as i64);
@@ -142,13 +151,13 @@ fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool
                 }
                 i += 1;
             }
-            Command::BulkString { value: arg } if *arg == String::from("xx") => {
+            Command::BulkString { value: arg } if *arg.to_lowercase() == String::from("xx") => {
                 xx = true;
             }
-            Command::BulkString { value: arg } if *arg == String::from("nx") => {
+            Command::BulkString { value: arg } if *arg.to_lowercase() == String::from("nx") => {
                 nx = true;
             }
-            Command::BulkString { value: arg } if *arg == String::from("get") => {
+            Command::BulkString { value: arg } if *arg.to_lowercase() == String::from("get") => {
                 get = true;
             }
             _ => {}
@@ -161,10 +170,10 @@ fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool
 
 fn handle_get(db: Db, values: Vec<Command>) -> String {
     // TODO handle db read write failure
-    let read_db = db.read().unwrap();
     let key = values.get(1);
     if let Some(key) = key {
         if let Command::BulkString { value: key } = key {
+            let read_db = db.read().unwrap();
             let value = read_db.get(key);
             return if let Some((value, expiry)) = value {
                 if Utc::now() < *expiry {
