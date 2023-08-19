@@ -102,16 +102,25 @@ fn exectute_set(
     options: (DateTime<Utc>, bool, bool, bool),
 ) -> String {
     let mut db = db.write().unwrap();
+    let key = key.to_string();
+    let value = value.to_string();
     let (expiry, nx, xx, get) = options;
-    let result = db.insert(key.to_string(), value.to_string());
-    if get {
-        if let Some(prev) = result {
-            return get_bulk_string(&prev);
+
+    let entry = db.get(&key);
+    if (entry.is_some() && nx) || (entry.is_none() && xx) || (!nx && !xx) {
+        let result = db.insert(key, value);
+        if get {
+            if let Some(prev) = result {
+                get_bulk_string(&prev)
+            } else {
+                get_null_string()
+            }
         } else {
-            return get_null_string();
+            get_simple_string("OK")
         }
+    } else {
+        get_null_string()
     }
-    return "+OK\r\n".into();
 }
 
 fn parse_set_options(values: &Vec<Command>) -> Result<(DateTime<Utc>, bool, bool, bool)> {
@@ -185,12 +194,16 @@ fn handle_echo(values: Vec<Command>) -> String {
     wrong_number_args("echo")
 }
 
-fn get_bulk_string(value: &String) -> String {
+fn get_bulk_string(value: &str) -> String {
     format!("${}\r\n{}\r\n", value.len(), value)
 }
 
 fn get_null_string() -> String {
     "_\r\n".into()
+}
+
+fn get_simple_string(value: &str) -> String {
+    format!("+{}\r\n", value)
 }
 
 fn invalid_arg(command: &str) -> String {
