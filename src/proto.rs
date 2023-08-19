@@ -3,6 +3,7 @@ pub enum ParserError {
     InvalidLength(String),
     InvalidCommand,
     EmptyFirstByte,
+    InvalidInteger(String),
 }
 
 #[derive(Debug)]
@@ -10,6 +11,7 @@ pub enum Command {
     SimpleString { value: String },
     BulkString { value: String },
     Array { values: Vec<Command> },
+    Integer { value: i32 },
 }
 
 pub fn parse(command: &[u8]) -> Result<Command, ParserError> {
@@ -22,6 +24,7 @@ fn parse_command<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Comm
     let first_byte = commands.next().ok_or(ParserError::EmptyFirstByte)?;
     match first_byte {
         b'+' => parse_simple_string(commands),
+        b':' => parse_integer(commands),
         b'*' => parse_array(commands),
         b'$' => parse_bulk_string(commands),
         _ => Err(ParserError::EmptyFirstByte),
@@ -58,6 +61,15 @@ fn parse_simple_string<'a>(
 ) -> Result<Command, ParserError> {
     let value = get_value(commands)?;
     Ok(Command::SimpleString { value })
+}
+
+fn parse_integer<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Command, ParserError> {
+    let value = get_value(commands)?;
+    Ok(Command::Integer {
+        value: value
+            .parse()
+            .map_err(|_| ParserError::InvalidInteger(value))?,
+    })
 }
 
 fn get_value_with_len<'a>(
