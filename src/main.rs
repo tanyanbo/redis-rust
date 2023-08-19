@@ -2,10 +2,10 @@ mod proto;
 
 use std::io::ErrorKind;
 
-use proto::parse;
+use proto::{parse, Command};
 use tokio::{
     self,
-    io::{self},
+    io::{self, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     spawn,
 };
@@ -31,18 +31,32 @@ async fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
             Ok(0) => return Ok(()),
             Ok(bytes) => {
                 let command = parse(&buf[..bytes]);
-                println!("{:?}", String::from_utf8_lossy(&buf[..bytes]));
                 println!("{:?}", command);
-                // match commands.get(0) {
-                //     Some(&"ping") => {
-                //         stream.write(b"+pong\r\n").await?;
-                //         stream.flush().await?;
-                //     }
-                //     Some(&"echo") => {}
-                //     Some(_) | None => {
-                //         stream.write(b"+\r\n").await?;
-                //     }
-                // };
+                match command {
+                    Ok(Command::Array { values }) => {
+                        if let Some(command) = values.get(0) {
+                            match command {
+                                Command::BulkString { value } if *value == String::from("ping") => {
+                                    stream.write(b"+PONG\r\n").await?;
+                                    stream.flush().await?;
+                                }
+                                _ => {
+                                    stream.write(b"+Unsupported\r\n").await?;
+                                    stream.flush().await?;
+                                }
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        stream.write(b"+Unsupported\r\n").await?;
+                        stream.flush().await?;
+                    }
+                    Err(e) => {
+                        // let err_string = format!("{:?}", e);
+                        // stream.write(err_string.as_bytes()).await?;
+                        // stream.flush().await?;
+                    }
+                };
             }
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue,
             Err(e) => return Err(e),
