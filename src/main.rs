@@ -2,10 +2,10 @@ mod proto;
 
 use std::io::ErrorKind;
 
-use proto::Parser;
+use proto::parse;
 use tokio::{
     self,
-    io::{self, AsyncWriteExt},
+    io::{self},
     net::{TcpListener, TcpStream},
     spawn,
 };
@@ -30,7 +30,7 @@ async fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
         match result {
             Ok(0) => return Ok(()),
             Ok(bytes) => {
-                let command = Parser::parse(&buf[..bytes]);
+                let command = parse(&buf[..bytes]);
                 // match commands.get(0) {
                 //     Some(&"ping") => {
                 //         stream.write(b"+pong\r\n").await?;
