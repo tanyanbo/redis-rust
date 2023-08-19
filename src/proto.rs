@@ -14,7 +14,7 @@ pub fn parse<'a>(command: &'a [u8]) -> Result<Command, ParserError> {
     let mut iter = command.iter();
 
     loop {
-        let string = parse_command(&mut iter);
+        let command = parse_command(&mut iter);
     }
 }
 
@@ -61,9 +61,12 @@ fn parse_array<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<Comman
 fn parse_bulk_string<'a>(
     commands: &mut impl Iterator<Item = &'a u8>,
 ) -> Result<Command, ParserError> {
-    Ok(Command::BulkString {
-        value: String::from("asd"),
-    })
+    let len = get_value(commands)?;
+    let value = get_value_with_len(
+        commands,
+        len.parse().map_err(|_| ParserError::InvalidLength(len))?,
+    )?;
+    Ok(Command::BulkString { value })
 }
 
 fn parse_simple_string<'a>(
@@ -75,21 +78,24 @@ fn parse_simple_string<'a>(
 
 fn get_value_with_len<'a>(
     commands: &mut impl Iterator<Item = &'a u8>,
-    len: usize,
+    mut len: usize,
 ) -> Result<String, ParserError> {
-    loop {
-        let mut value = String::with_capacity(len);
+    let mut value = String::with_capacity(len);
+    while len > 0 {
         match commands.next() {
-            Some(command) if *command != b'\r' => {
+            Some(command) => {
                 value.push(*command as char);
-            }
-            Some(_) => {
-                commands.next();
-                break Ok(value);
             }
             None => return Err(ParserError::InvalidCommand),
         }
+        len -= 1;
     }
+    let first = commands.next().ok_or(ParserError::InvalidCommand)?;
+    let second = commands.next().ok_or(ParserError::InvalidCommand)?;
+    if *first != b'\r' || *second != b'\n' {
+        return Err(ParserError::InvalidCommand);
+    }
+    Ok(value)
 }
 
 fn get_value<'a>(commands: &mut impl Iterator<Item = &'a u8>) -> Result<String, ParserError> {
