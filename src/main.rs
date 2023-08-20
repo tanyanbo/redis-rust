@@ -45,18 +45,22 @@ async fn delete_expired_keys(db: Db) {
         sleep(Duration::from_secs(DELETE_KEYS_SECONDS)).await;
         let mut db = db.write().unwrap();
         loop {
-            let db_len = db.len();
             let vec = db
                 .iter()
-                .filter(|(_, value)| value.1.is_some() && Utc::now() > value.1.unwrap())
-                .map(|(key, _)| key.clone())
+                .filter(|(_, value)| value.1.is_some())
                 .choose_multiple(&mut rng, 20);
-            let vec_len = vec.len();
-            for key in vec {
+            let expired_keys = vec
+                .iter()
+                .filter(|(_, value)| Utc::now() > value.1.unwrap())
+                .map(|(key, _)| (*key).clone())
+                .collect::<Vec<_>>();
+            let should_delete_again = expired_keys.len() * 4 > vec.len();
+            for key in expired_keys {
                 db.remove(&key);
             }
+
             println!("{:?}", db);
-            if vec_len * 4 <= db_len {
+            if !should_delete_again {
                 break;
             }
         }
